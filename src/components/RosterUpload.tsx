@@ -1,29 +1,107 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { RosterOperator } from "@/lib/types";
+
+type IdMap = Record<string, string>; // char_id -> display name
+
+// Singleton: fetch id_map.json once, share across all calls
+let idMapCache: IdMap | null = null;
+let idMapPromise: Promise<IdMap> | null = null;
+function getIdMap(): Promise<IdMap> {
+  if (idMapCache) return Promise.resolve(idMapCache);
+  if (!idMapPromise) {
+    idMapPromise = fetch("/db/id_map.json")
+      .then((r) => r.json())
+      .then((data: IdMap) => {
+        idMapCache = data;
+        return data;
+      })
+      .catch(() => {
+        idMapCache = {};
+        return {} as IdMap;
+      });
+  }
+  return idMapPromise;
+}
 
 interface RosterUploadProps {
   onRosterLoaded: (roster: RosterOperator[]) => void;
 }
 
-function validateRoster(data: unknown): RosterOperator[] | null {
-  if (!Array.isArray(data)) return null;
-  if (data.length === 0) return null;
+/**
+ * Normalize raw JSON from any supported source into our format.
+ * Handles:
+ *   - Our console script output (array):  { name, elite, level, potential }
+ *   - Krooster V1/V2 export (array):      { name, promotion, level, potential, owned }
+ *   - Krooster localStorage (object):     { [char_id]: { op_id, elite, level, potential } }
+ *   - Raw game data fallback:             { name, evolvePhase, level, potentialRank }
+ */
+function normalizeRoster(
+  data: unknown,
+  idMap: IdMap
+): Record<string, unknown>[] | null {
+  // Convert object-keyed input (Krooster localStorage) to array
+  let items: unknown[];
+  if (Array.isArray(data)) {
+    items = data;
+  } else if (typeof data === "object" && data !== null) {
+    items = Object.values(data);
+  } else {
+    return null;
+  }
+
+  if (items.length === 0) return null;
+
+  const result: Record<string, unknown>[] = [];
+  for (const item of items) {
+    if (typeof item !== "object" || item === null) continue;
+    const raw = item as Record<string, unknown>;
+
+    // Krooster V2 exports include unowned operators — skip them
+    if ("owned" in raw && raw.owned === false) continue;
+
+    // Resolve name: direct name field, or op_id -> idMap lookup
+    let name: string | undefined;
+    if (typeof raw.name === "string" && raw.name) {
+      name = raw.name;
+    } else if (typeof raw.op_id === "string" && idMap[raw.op_id]) {
+      name = idMap[raw.op_id];
+    } else if (typeof raw.charId === "string" && idMap[raw.charId]) {
+      name = idMap[raw.charId];
+    }
+    if (!name) continue;
+
+    // Krooster V2 uses "promotion", localStorage uses "elite", game data uses "evolvePhase"
+    const elite = raw.elite ?? raw.promotion ?? raw.evolvePhase ?? 0;
+    const potential = raw.potential ?? raw.potentialRank ?? 0;
+    const level = raw.level ?? 1;
+
+    result.push({ name, elite, level, potential });
+  }
+
+  return result.length > 0 ? result : null;
+}
+
+function validateRoster(
+  data: unknown,
+  idMap: IdMap
+): RosterOperator[] | null {
+  const normalized = normalizeRoster(data, idMap);
+  if (!normalized) return null;
 
   const roster: RosterOperator[] = [];
-  for (const item of data) {
-    if (typeof item !== "object" || item === null) return null;
-    const op = item as Record<string, unknown>;
-
+  for (const op of normalized) {
     if (typeof op.name !== "string" || !op.name) return null;
-    if (typeof op.elite !== "number" || op.elite < 0 || op.elite > 2) return null;
+
+    const elite = Number(op.elite);
+    if (isNaN(elite) || elite < 0 || elite > 2) return null;
 
     roster.push({
       name: op.name,
-      elite: op.elite,
+      elite,
       level: typeof op.level === "number" ? op.level : 1,
-      potential: typeof op.potential === "number" ? op.potential : 0,
+      potential: typeof op.potential === "number" ? Number(op.potential) : 0,
     });
   }
 
@@ -34,25 +112,45 @@ export default function RosterUpload({ onRosterLoaded }: RosterUploadProps) {
   const [error, setError] = useState<string | null>(null);
   const [pasteValue, setPasteValue] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const onRosterLoadedRef = useRef(onRosterLoaded);
+  onRosterLoadedRef.current = onRosterLoaded;
 
   const processJson = useCallback(
-    (text: string) => {
+    async (text: string) => {
       setError(null);
+      setProcessing(true);
       try {
         const parsed = JSON.parse(text);
-        const roster = validateRoster(parsed);
+        const isArray = Array.isArray(parsed);
+        const isObject = typeof parsed === "object" && parsed !== null;
+        console.log("[RosterUpload] Parsed input:", { isArray, isObject, keyCount: isObject ? Object.keys(parsed).length : 0 });
+
+        // Await id_map so op_id -> name resolution is guaranteed ready
+        const map = await getIdMap();
+        console.log("[RosterUpload] idMap loaded:", Object.keys(map).length, "entries");
+
+        const roster = validateRoster(parsed, map);
+        console.log("[RosterUpload] Validated roster:", roster ? roster.length + " operators" : "null");
+        if (roster) {
+          console.log("[RosterUpload] First 3:", roster.slice(0, 3).map(o => `${o.name} E${o.elite}`));
+        }
+
         if (!roster) {
           setError(
-            "Invalid format. Expected an array of { name, elite, level, potential }."
+            "Invalid format. Accepts: array of { name, elite }, Krooster export, or Krooster localStorage data."
           );
           return;
         }
-        onRosterLoaded(roster);
-      } catch {
+        onRosterLoadedRef.current(roster);
+      } catch (e) {
+        console.error("[RosterUpload] Error:", e);
         setError("Invalid JSON. Please check the format and try again.");
+      } finally {
+        setProcessing(false);
       }
     },
-    [onRosterLoaded]
+    []
   );
 
   const handleDrop = useCallback(
@@ -139,7 +237,7 @@ export default function RosterUpload({ onRosterLoaded }: RosterUploadProps) {
           Drop roster.json here or click to browse
         </p>
         <p className="text-sm text-muted">
-          Export from Krooster using the console script, then upload the file
+          Supports Krooster export, localStorage paste, or console script output
         </p>
       </div>
 
@@ -158,10 +256,10 @@ export default function RosterUpload({ onRosterLoaded }: RosterUploadProps) {
         <div className="flex gap-3 mt-2">
           <button
             onClick={handlePaste}
-            disabled={!pasteValue.trim()}
+            disabled={!pasteValue.trim() || processing}
             className="px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-40 rounded-lg text-sm font-medium transition-colors"
           >
-            Load Roster
+            {processing ? "Loading..." : "Load Roster"}
           </button>
           <button
             onClick={handleDemoRoster}

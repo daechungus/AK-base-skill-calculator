@@ -7,7 +7,8 @@
       "Bash(npx create-next-app@latest:*)",
       "Bash(wmic:*)",
       "Bash(powershell:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(node -e:*)"
     ]
   }
 }

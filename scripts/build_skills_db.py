@@ -16,6 +16,7 @@ BASE_URL = "https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData_YoStar
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), ".cache")
 OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "db", "base_skills.json")
+ID_MAP_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "db", "id_map.json")
 
 ROOM_TYPE_MAP = {
     "MANUFACTURE": "Factory",
@@ -170,6 +171,12 @@ def build_skills_db():
 
     print(f"\nDone! Generated {len(skills_db)} operators -> {OUTPUT_PATH}")
     print(f"File size: {os.path.getsize(OUTPUT_PATH) / 1024:.1f} KB")
+
+    # Write char_id -> name map (for Krooster localStorage imports)
+    id_map = dict(sorted(char_names.items()))
+    with open(ID_MAP_PATH, "w", encoding="utf-8") as f:
+        json.dump(id_map, f, indent=2, ensure_ascii=False)
+    print(f"ID map: {len(id_map)} entries -> {ID_MAP_PATH}")
 
     # Stats
     room_counts: dict[str, int] = {}

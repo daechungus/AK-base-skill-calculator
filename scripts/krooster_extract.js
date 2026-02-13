@@ -96,16 +96,19 @@
   }
 
   // Extract clean roster
+  // Krooster localStorage uses op_id (e.g. "char_102_texas") instead of name.
+  // We export op_id so the web app can resolve it via id_map.json.
   const roster = operators
     .filter(
       (op) =>
         op &&
         typeof op === "object" &&
-        (op.name || op.id || op.charId) &&
+        (op.name || op.op_id || op.id || op.charId) &&
         "elite" in op
     )
     .map((op) => ({
-      name: op.name || op.id || op.charId || "Unknown",
+      name: op.name || undefined,
+      op_id: op.op_id || op.id || op.charId || undefined,
       elite: Number(op.elite) || 0,
       level: Number(op.level) || 1,
       potential: Number(op.potential) || 0,
