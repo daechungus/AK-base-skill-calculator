@@ -122,20 +122,9 @@ export default function RosterUpload({ onRosterLoaded }: RosterUploadProps) {
       setProcessing(true);
       try {
         const parsed = JSON.parse(text);
-        const isArray = Array.isArray(parsed);
-        const isObject = typeof parsed === "object" && parsed !== null;
-        console.log("[RosterUpload] Parsed input:", { isArray, isObject, keyCount: isObject ? Object.keys(parsed).length : 0 });
-
         // Await id_map so op_id -> name resolution is guaranteed ready
         const map = await getIdMap();
-        console.log("[RosterUpload] idMap loaded:", Object.keys(map).length, "entries");
-
         const roster = validateRoster(parsed, map);
-        console.log("[RosterUpload] Validated roster:", roster ? roster.length + " operators" : "null");
-        if (roster) {
-          console.log("[RosterUpload] First 3:", roster.slice(0, 3).map(o => `${o.name} E${o.elite}`));
-        }
-
         if (!roster) {
           setError(
             "Invalid format. Accepts: array of { name, elite }, Krooster export, or Krooster localStorage data."
@@ -143,8 +132,7 @@ export default function RosterUpload({ onRosterLoaded }: RosterUploadProps) {
           return;
         }
         onRosterLoadedRef.current(roster);
-      } catch (e) {
-        console.error("[RosterUpload] Error:", e);
+      } catch {
         setError("Invalid JSON. Please check the format and try again.");
       } finally {
         setProcessing(false);

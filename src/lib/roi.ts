@@ -4,11 +4,12 @@ import {
   UpgradeRecommendation,
   BaseSkill,
 } from "./types";
-import { PROMOTION_COSTS } from "./constants";
+import { PROMOTION_COSTS, PRODUCTION_ROOMS } from "./constants";
 
 /**
  * Calculate upgrade recommendations for operators who would gain
- * better base skills at a higher elite level.
+ * better production base skills (Trading/Factory/Power) at a higher elite level.
+ * Non-production rooms (Training, Dormitory, etc.) are excluded.
  */
 export function calculateROI(
   roster: RosterOperator[],
@@ -29,14 +30,16 @@ export function calculateROI(
       const targetSkills = opData.skills[targetKey];
       if (!targetSkills || targetSkills.length === 0) continue;
 
-      // Find the best new skill at the target elite
-      const bestNewSkill = targetSkills.reduce<BaseSkill | null>(
-        (best, skill) => {
-          if (!best || skill.value > best.value) return skill;
-          return best;
-        },
-        null
-      );
+      // Find the best new production skill at the target elite
+      const bestNewSkill = targetSkills
+        .filter((s) => PRODUCTION_ROOMS.includes(s.room))
+        .reduce<BaseSkill | null>(
+          (best, skill) => {
+            if (!best || skill.value > best.value) return skill;
+            return best;
+          },
+          null
+        );
 
       if (!bestNewSkill || bestNewSkill.value <= 0) continue;
 

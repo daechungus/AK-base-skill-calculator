@@ -8,7 +8,11 @@
       "Bash(wmic:*)",
       "Bash(powershell:*)",
       "Bash(python:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(npx tsx:*)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(curl:*)",
+      "Bash(del:*)"
     ]
   }
 }
